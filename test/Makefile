@@ -1,12 +1,25 @@
 
-CFLAGS = -O2 -Wall -Wextra
+CFLAGS = -g -O2 -Wall -Wextra
 CC = gcc
 
-test: test.o
+all: test_socket test
+
+test_socket: test_client test_server
+
+% : %.o
 	$(CC) $(CFLAGS) -o $@ $^	
+
+# test_client: test_client.o
+# 	$(CC) $(CFLAGS) -o $@ $^	
+
+# test_server: test_server.o
+# 	$(CC) $(CFLAGS) -o $@ $^	
+
+# test: test.o
+# 	$(CC) $(CFLAGS) -o $@ $^	
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $^ 
 
 clean:
-	@rm -f *.o
+	@rm -rf *.o *.dSYM test_client test_server test
