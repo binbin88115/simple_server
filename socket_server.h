@@ -1,40 +1,92 @@
-#ifndef skynet_socket_server_h
-#define skynet_socket_server_h
+#ifndef _SOCKET_SERVER_H_
+#define _SOCKET_SERVER_H_
 
-#include <stdint.h>
+#include <set>
+#include <queue>
+#include <unordered_map>
+#include <list>
+#include <mutex>
 
-#define SOCKET_DATA 0
-#define SOCKET_CLOSE 1
-#define SOCKET_OPEN 2
-#define SOCKET_ACCEPT 3
-#define SOCKET_ERROR 4
-#define SOCKET_EXIT 5
+#include "socket_poll.h"
 
-struct socket_server;
+class socket_t;
+class socket_server 
+{
+protected:
+    enum {
+        MSG_TYPE_UNKNOWN = 0,
+        MSG_TYPE_ACCEPT,
+        MSG_TYPE_CLOSE,
+        MSG_TYPE_ERROR,
+        MSG_TYPE_READ,
+        MSG_TYPE_WRITE,
+        MSG_TYPE_CMD
+    };
 
-struct socket_message {
-	int id;
-	uintptr_t opaque;
-	int ud;	// for accept, ud is listen id ; for data, ud is size of data 
-	char * data;
+    class socket_message
+    {
+    public:
+        socket_message() : sock_id(0), type(MSG_TYPE_UNKNOWN), buffer(nullptr), sz(0) {}
+        ~socket_message() { if (buffer) { delete buffer; } }
+
+    public:
+        int sock_id;
+        int type;
+        char* buffer;
+        int sz;
+    };
+
+public:
+	socket_server();
+	virtual ~socket_server();
+
+    void listen(const char* host, int port, int backlog);
+    int connect(const char* host, int port);
+    void send(int sock_id, const char* buffer, int sz);
+    void close_socket(int sock_id);
+
+protected:
+    virtual void onMessage(const socket_message* msg);
+    virtual void onCommand(const socket_message* msg);
+
+private:
+    int get_sock_id();
+
+    void socks_polling();
+    void main_thread_polling();
+
+    socket_message* pack_message(int sock_id, int type, char* buffer = nullptr, int sz = 0);
+    void push_message(socket_message* msg);
+
+    void add_sock(socket_t* sock);
+    void del_sock(socket_t* sock);
+    socket_t* get_sock(int sock_id);
+
+    socket_message* read_sock(socket_t* sock);
+    socket_message* write_sock(socket_t* sock);
+
+    void check_buffers();
+    void quit();
+
+private:
+    bool m_exit;
+
+    std::string m_pcmd;
+
+    socket_t* m_bindin_sock;
+    socket_t* m_listen_sock;
+    socket_poll m_poll;
+
+    std::mutex m_socks_mtx;
+	std::set<socket_t*> m_socks;
+
+    std::mutex m_msgs_mtx;
+    std::queue<socket_message*> m_msgs;
+
+    std::mutex m_buffers_mtx;
+    std::unordered_map<int, std::list<std::string> > m_buffers;
+
+    static int s_sock_id;
 };
 
-struct socket_server * socket_server_create();
-void socket_server_release(struct socket_server *);
-int socket_server_poll(struct socket_server *, struct socket_message *result, int *more);
-
-void socket_server_exit(struct socket_server *);
-void socket_server_close(struct socket_server *, uintptr_t opaque, int id);
-void socket_server_start(struct socket_server *, uintptr_t opaque, int id);
-
-// return -1 when error
-int64_t socket_server_send(struct socket_server *, int id, const void * buffer, int sz);
-
-// ctrl command below returns id
-int socket_server_listen(struct socket_server *, uintptr_t opaque, const char * addr, int port, int backlog);
-int socket_server_connect(struct socket_server *, uintptr_t opaque, const char * addr, int port);
-int socket_server_bind(struct socket_server *, uintptr_t opaque, int fd);
-
-int socket_server_block_connect(struct socket_server *, uintptr_t opaque, const char * addr, int port);
-
-#endif
+#endif // _SOCKET_SERVER_H_
